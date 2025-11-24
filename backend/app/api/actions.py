@@ -57,6 +57,88 @@ def create_library_action(
     db.refresh(new_action)
     return new_action
 
+@router.patch("/library/{library_id}", response_model=ActionLibraryResponse)
+def update_library_action(
+    library_id: int,
+    action_data: ActionLibraryCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    # Get the action
+    action = db.query(ActionLibrary).filter(ActionLibrary.library_id == library_id).first()
+
+    if not action:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Action not found"
+        )
+
+    # Only allow editing user-created actions
+    if not action.user_created:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot edit starter actions"
+        )
+
+    # Verify the action was created by this user (by checking the session)
+    if action.created_from_session_id:
+        session = db.query(GameSession).filter(
+            GameSession.session_id == action.created_from_session_id,
+            GameSession.user_id == current_user.user_id
+        ).first()
+        if not session:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to edit this action"
+            )
+
+    # Update fields
+    action.action_description = action_data.action_description
+    action.default_user_movement = action_data.default_user_movement
+    action.default_llm_movement = action_data.default_llm_movement
+
+    db.commit()
+    db.refresh(action)
+    return action
+
+@router.delete("/library/{library_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_library_action(
+    library_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    # Get the action
+    action = db.query(ActionLibrary).filter(ActionLibrary.library_id == library_id).first()
+
+    if not action:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Action not found"
+        )
+
+    # Only allow deleting user-created actions
+    if not action.user_created:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot delete starter actions"
+        )
+
+    # Verify the action was created by this user
+    if action.created_from_session_id:
+        session = db.query(GameSession).filter(
+            GameSession.session_id == action.created_from_session_id,
+            GameSession.user_id == current_user.user_id
+        ).first()
+        if not session:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to delete this action"
+            )
+
+    db.delete(action)
+    db.commit()
+    return None
+
 # Tracked Actions endpoints
 @router.post("/track", response_model=TrackedActionResponse, status_code=status.HTTP_201_CREATED)
 def track_action(

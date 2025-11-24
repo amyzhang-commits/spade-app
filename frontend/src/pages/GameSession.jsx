@@ -53,6 +53,23 @@ export default function GameSession() {
     try {
       const response = await axios.get(`/api/actions/session/${sessionId}/actions`)
       setTrackedActions(response.data)
+
+      // Extract custom actions (those without library_id) and add to sessionCustomActions
+      const customActions = response.data
+        .filter(action => !action.library_id && action.action_description)
+        .map(action => ({
+          action_description: action.action_description,
+          default_user_movement: action.user_movement,
+          default_llm_movement: action.llm_movement,
+          action_id: action.action_id
+        }))
+
+      // Remove duplicates by description
+      const uniqueCustomActions = customActions.filter((action, index, self) =>
+        index === self.findIndex(a => a.action_description === action.action_description)
+      )
+
+      setSessionCustomActions(uniqueCustomActions)
     } catch (error) {
       console.error('Failed to fetch tracked actions:', error)
     }
@@ -67,7 +84,7 @@ export default function GameSession() {
     }
   }
 
-  const trackAction = async (libraryId = null, description = null, userMov = 0, llmMov = 0) => {
+  const trackAction = async (libraryId = null, description = null, userMov = 0, llmMov = 0, isNewCustom = false) => {
     try {
       const response = await axios.post('/api/actions/track', {
         session_id: parseInt(sessionId),
@@ -86,8 +103,8 @@ export default function GameSession() {
 
       setActions(prev => [response.data, ...prev])
 
-      // If this was a custom action, add it to sessionCustomActions for quick access
-      if (!libraryId && description) {
+      // Only add to sessionCustomActions if this is a NEW custom action (not reusing an existing one)
+      if (isNewCustom && !libraryId && description) {
         const customActionObj = {
           action_description: description,
           default_user_movement: userMov,
@@ -119,11 +136,13 @@ export default function GameSession() {
   }
 
   const handleCustomQuickAction = (customAction) => {
+    // isNewCustom = false because we're reusing an existing custom action
     trackAction(
       null,
       customAction.action_description,
       customAction.default_user_movement,
-      customAction.default_llm_movement
+      customAction.default_llm_movement,
+      false  // Not a new custom action, just reusing
     )
   }
 
@@ -131,11 +150,13 @@ export default function GameSession() {
     e.preventDefault()
     if (!customAction.trim()) return
 
+    // isNewCustom = true because this is creating a brand new custom action
     trackAction(
       null,
       customAction,
       parseInt(customUserMovement),
-      parseInt(customLlmMovement)
+      parseInt(customLlmMovement),
+      true  // This IS a new custom action
     )
   }
 
@@ -324,6 +345,7 @@ export default function GameSession() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {actionLibrary
                       .filter(action => selectedActionIds.length === 0 || selectedActionIds.includes(action.library_id))
+                      .filter(action => !action.user_created)  // Exclude user-created actions from this section
                       .map((action) => (
                       <button
                         key={action.library_id}
@@ -341,6 +363,39 @@ export default function GameSession() {
                       </button>
                     ))}
                   </div>
+
+                  {/* User-Created Library Actions (from picker) */}
+                  {actionLibrary
+                    .filter(action => selectedActionIds.length === 0 || selectedActionIds.includes(action.library_id))
+                    .filter(action => action.user_created).length > 0 && (
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
+                        <span>Your Custom Actions</span>
+                        <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">Library</span>
+                      </h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {actionLibrary
+                          .filter(action => selectedActionIds.length === 0 || selectedActionIds.includes(action.library_id))
+                          .filter(action => action.user_created)
+                          .map((action) => (
+                          <button
+                            key={action.library_id}
+                            onClick={() => handleLibraryAction(action)}
+                            className="text-left p-4 border-2 border-green-200 bg-green-50 rounded-lg hover:border-green-400 hover:bg-green-100 transition group"
+                          >
+                            <p className="text-sm font-medium text-gray-900 group-hover:text-green-700">
+                              {action.action_description}
+                            </p>
+                            <div className="flex gap-4 mt-2 text-xs text-gray-600">
+                              <span className="text-user-color">You: {action.default_user_movement > 0 ? '+' : ''}{action.default_user_movement}</span>
+                              <span className="text-llm-color">LLM: {action.default_llm_movement > 0 ? '+' : ''}{action.default_llm_movement}</span>
+                              <span className="ml-auto">Used {action.times_used}x</span>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Session Custom Actions */}
                   {sessionCustomActions.length > 0 && (

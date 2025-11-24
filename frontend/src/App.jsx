@@ -5,6 +5,7 @@ import Signup from './pages/Signup'
 import Dashboard from './pages/Dashboard'
 import ActionPicker from './pages/ActionPicker'
 import GameSession from './pages/GameSession'
+import ManageLibrary from './pages/ManageLibrary'
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth()
@@ -55,6 +56,11 @@ function App() {
             <Route path="/session/:sessionId" element={
               <PrivateRoute>
                 <GameSession />
+              </PrivateRoute>
+            } />
+            <Route path="/manage-library" element={
+              <PrivateRoute>
+                <ManageLibrary />
               </PrivateRoute>
             } />
             <Route path="/" element={<Navigate to="/dashboard" />} />

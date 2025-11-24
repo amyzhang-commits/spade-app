@@ -58,6 +58,12 @@ export default function Dashboard() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
           <h1 className="text-2xl font-bold text-gray-900">Spade App</h1>
           <div className="flex items-center gap-4">
+            <button
+              onClick={() => navigate('/manage-library')}
+              className="text-sm text-gray-600 hover:text-gray-900 font-medium"
+            >
+              Manage Library
+            </button>
             <span className="text-sm text-gray-600">{user?.email}</span>
             <button
               onClick={logout}
