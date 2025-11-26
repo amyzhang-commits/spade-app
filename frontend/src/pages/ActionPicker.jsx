@@ -9,6 +9,7 @@ export default function ActionPicker() {
 
   const [actionLibrary, setActionLibrary] = useState([])
   const [selectedActions, setSelectedActions] = useState([])
+  const [customActions, setCustomActions] = useState([]) // Pre-session custom actions (not saved to library yet)
   const [loading, setLoading] = useState(true)
   const [creating, setCreating] = useState(false)
   const [customDescription, setCustomDescription] = useState('')
@@ -41,36 +42,34 @@ export default function ActionPicker() {
     }
   }
 
-  const createCustomAction = async (e) => {
+  const createCustomAction = (e) => {
     e.preventDefault()
     if (!customDescription.trim()) return
 
-    setAddingCustom(true)
-    try {
-      const response = await axios.post('/api/actions/library', {
-        action_description: customDescription,
-        default_user_movement: parseInt(customUserMovement),
-        default_llm_movement: parseInt(customLlmMovement),
-        created_from_session_id: null
-      })
-
-      // Add to library and select it
-      const newAction = response.data
-      setActionLibrary([...actionLibrary, newAction])
-      if (selectedActions.length < 5) {
-        setSelectedActions([...selectedActions, newAction.library_id])
-      }
-
-      // Reset form
-      setCustomDescription('')
-      setCustomUserMovement(0)
-      setCustomLlmMovement(0)
-    } catch (error) {
-      console.error('Failed to create custom action:', error)
-      alert('Failed to create custom action')
-    } finally {
-      setAddingCustom(false)
+    const totalActions = selectedActions.length + customActions.length
+    if (totalActions >= 5) {
+      alert('Maximum 5 actions (library + custom combined)')
+      return
     }
+
+    // Store custom action locally (not saving to library yet)
+    const newCustomAction = {
+      action_description: customDescription,
+      default_user_movement: parseInt(customUserMovement),
+      default_llm_movement: parseInt(customLlmMovement),
+      id: Date.now() // Temporary ID for React key
+    }
+
+    setCustomActions([...customActions, newCustomAction])
+
+    // Reset form
+    setCustomDescription('')
+    setCustomUserMovement(0)
+    setCustomLlmMovement(0)
+  }
+
+  const removeCustomAction = (id) => {
+    setCustomActions(customActions.filter(action => action.id !== id))
   }
 
   const getActionCategory = (action) => {
@@ -81,8 +80,9 @@ export default function ActionPicker() {
   }
 
   const createSession = async () => {
-    if (selectedActions.length < 3) {
-      alert('Please select at least 3 actions to track')
+    const totalActions = selectedActions.length + customActions.length
+    if (totalActions < 3) {
+      alert('Please select at least 3 actions to track (library + custom combined)')
       return
     }
 
@@ -92,7 +92,10 @@ export default function ActionPicker() {
         session_name: sessionName || null,
         selected_action_ids: selectedActions
       })
-      navigate(`/session/${response.data.session_id}`)
+      // Pass custom actions via navigation state
+      navigate(`/session/${response.data.session_id}`, {
+        state: { initialCustomActions: customActions }
+      })
     } catch (error) {
       console.error('Failed to create session:', error)
       alert('Failed to create session')
@@ -131,7 +134,8 @@ export default function ActionPicker() {
             Choose from the library or create custom actions. Select what you'll likely do during this work session.
           </p>
           <p className="text-sm text-blue-700 mt-2">
-            Selected: {selectedActions.length} / 5 {selectedActions.length >= 3 && '✓'}
+            Total: {selectedActions.length + customActions.length} / 5
+            {selectedActions.length + customActions.length >= 3 && ' ✓'}
           </p>
         </div>
 
@@ -143,7 +147,7 @@ export default function ActionPicker() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {actionLibrary.map((action) => {
             const isSelected = selectedActions.includes(action.library_id)
-            const isDisabled = !isSelected && selectedActions.length >= 5
+            const isDisabled = !isSelected && (selectedActions.length + customActions.length >= 5)
             const category = getActionCategory(action)
 
             return (
@@ -192,6 +196,57 @@ export default function ActionPicker() {
             )
           })}
             </div>
+
+            {/* Custom Actions to Track */}
+            {customActions.length > 0 && (
+              <div className="mt-6">
+                <h3 className="text-md font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                  <span>Custom Actions to Track</span>
+                  <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">New</span>
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {customActions.map((action) => {
+                    const category = getActionCategory(action)
+                    return (
+                      <div
+                        key={action.id}
+                        className="text-left p-4 border-2 border-purple-200 bg-purple-50 rounded-lg"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <p className="text-sm font-medium text-gray-900">
+                                {action.action_description}
+                              </p>
+                              <span className={`text-xs px-2 py-0.5 rounded-full ${category.color}`}>
+                                {category.label}
+                              </span>
+                            </div>
+                            <div className="flex gap-4 text-xs text-gray-600">
+                              <span className="text-user-color">
+                                You: {action.default_user_movement > 0 ? '+' : ''}{action.default_user_movement}
+                              </span>
+                              <span className="text-llm-color">
+                                LLM: {action.default_llm_movement > 0 ? '+' : ''}{action.default_llm_movement}
+                              </span>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => removeCustomAction(action.id)}
+                            className="text-red-600 hover:text-red-800"
+                            title="Remove"
+                          >
+                            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Right: Create Custom Action (1/3 width) */}
@@ -245,14 +300,14 @@ export default function ActionPicker() {
                   </div>
                   <button
                     type="submit"
-                    disabled={addingCustom || selectedActions.length >= 5}
+                    disabled={selectedActions.length + customActions.length >= 5}
                     className="w-full px-4 py-2 bg-gray-700 text-white rounded-md hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
                   >
-                    {addingCustom ? 'Adding...' : 'Create & Select'}
+                    Add Custom Action
                   </button>
-                  {selectedActions.length >= 5 && (
+                  {selectedActions.length + customActions.length >= 5 && (
                     <p className="text-xs text-red-600 text-center">
-                      Max 5 actions selected
+                      Max 5 total actions (library + custom)
                     </p>
                   )}
                 </form>
@@ -265,12 +320,12 @@ export default function ActionPicker() {
         <div className="sticky bottom-0 bg-white border-t border-gray-200 p-4 -mx-4">
           <div className="max-w-4xl mx-auto flex justify-between items-center">
             <p className="text-sm text-gray-600">
-              {selectedActions.length < 3 && `Select at least ${3 - selectedActions.length} more action${3 - selectedActions.length === 1 ? '' : 's'}`}
-              {selectedActions.length >= 3 && "You're all set!"}
+              {selectedActions.length + customActions.length < 3 && `Add at least ${3 - (selectedActions.length + customActions.length)} more action${3 - (selectedActions.length + customActions.length) === 1 ? '' : 's'}`}
+              {selectedActions.length + customActions.length >= 3 && "You're all set!"}
             </p>
             <button
               onClick={createSession}
-              disabled={selectedActions.length < 3 || creating}
+              disabled={selectedActions.length + customActions.length < 3 || creating}
               className="px-8 py-3 bg-user-color text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-user-color disabled:opacity-50 disabled:cursor-not-allowed font-medium"
             >
               {creating ? 'Starting...' : 'Start Session'}

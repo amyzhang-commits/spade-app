@@ -1,11 +1,14 @@
 import { useState, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import axios from 'axios'
 import ScoreBars from '../components/ScoreBars'
 
 export default function GameSession() {
   const { sessionId } = useParams()
   const navigate = useNavigate()
+  const location = useLocation()
+  const initialCustomActions = location.state?.initialCustomActions || []
+
   const [session, setSession] = useState(null)
   const [actions, setActions] = useState([])
   const [actionLibrary, setActionLibrary] = useState([])
@@ -17,7 +20,7 @@ export default function GameSession() {
   const [showCustom, setShowCustom] = useState(false)
   const [trackedActions, setTrackedActions] = useState([])
   const [selectedActionIds, setSelectedActionIds] = useState([])
-  const [sessionCustomActions, setSessionCustomActions] = useState([])
+  const [sessionCustomActions, setSessionCustomActions] = useState(initialCustomActions) // Initialize with pre-session customs
   const [showEndDialog, setShowEndDialog] = useState(false)
   const [actionsToSave, setActionsToSave] = useState([])
 
@@ -54,8 +57,8 @@ export default function GameSession() {
       const response = await axios.get(`/api/actions/session/${sessionId}/actions`)
       setTrackedActions(response.data)
 
-      // Extract custom actions (those without library_id) and add to sessionCustomActions
-      const customActions = response.data
+      // Extract custom actions (those without library_id) from tracked actions
+      const trackedCustomActions = response.data
         .filter(action => !action.library_id && action.action_description)
         .map(action => ({
           action_description: action.action_description,
@@ -64,12 +67,13 @@ export default function GameSession() {
           action_id: action.action_id
         }))
 
-      // Remove duplicates by description
-      const uniqueCustomActions = customActions.filter((action, index, self) =>
-        index === self.findIndex(a => a.action_description === action.action_description)
-      )
-
-      setSessionCustomActions(uniqueCustomActions)
+      // Merge with pre-session custom actions, removing duplicates by description
+      setSessionCustomActions(prevCustoms => {
+        const allCustomActions = [...prevCustoms, ...trackedCustomActions]
+        return allCustomActions.filter((action, index, self) =>
+          index === self.findIndex(a => a.action_description === action.action_description)
+        )
+      })
     } catch (error) {
       console.error('Failed to fetch tracked actions:', error)
     }
@@ -374,7 +378,6 @@ export default function GameSession() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {actionLibrary
                       .filter(action => selectedActionIds.length === 0 || selectedActionIds.includes(action.library_id))
-                      .filter(action => !action.user_created)  // Exclude user-created actions from this section
                       .map((action) => (
                       <button
                         key={action.library_id}
@@ -392,39 +395,6 @@ export default function GameSession() {
                       </button>
                     ))}
                   </div>
-
-                  {/* User-Created Library Actions (from picker) */}
-                  {actionLibrary
-                    .filter(action => selectedActionIds.length === 0 || selectedActionIds.includes(action.library_id))
-                    .filter(action => action.user_created).length > 0 && (
-                    <div>
-                      <h3 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
-                        <span>Your Custom Actions</span>
-                        <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">Library</span>
-                      </h3>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        {actionLibrary
-                          .filter(action => selectedActionIds.length === 0 || selectedActionIds.includes(action.library_id))
-                          .filter(action => action.user_created)
-                          .map((action) => (
-                          <button
-                            key={action.library_id}
-                            onClick={() => handleLibraryAction(action)}
-                            className="text-left p-4 border-2 border-green-200 bg-green-50 rounded-lg hover:border-green-400 hover:bg-green-100 transition group"
-                          >
-                            <p className="text-sm font-medium text-gray-900 group-hover:text-green-700">
-                              {action.action_description}
-                            </p>
-                            <div className="flex gap-4 mt-2 text-xs text-gray-600">
-                              <span className="text-user-color">You: {action.default_user_movement > 0 ? '+' : ''}{action.default_user_movement}</span>
-                              <span className="text-llm-color">LLM: {action.default_llm_movement > 0 ? '+' : ''}{action.default_llm_movement}</span>
-                              <span className="ml-auto">Used {action.times_used}x</span>
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
 
                   {/* Session Custom Actions */}
                   {sessionCustomActions.length > 0 && (
